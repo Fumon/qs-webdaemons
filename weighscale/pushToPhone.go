@@ -12,6 +12,13 @@ import (
 
 	_ "github.com/lib/pq"
 	"github.com/streadway/amqp"
+	"github.com/thorduri/pushover"
+)
+
+const (
+	pushoverAppToken = ""
+	userToken        = ""
+	responseURLBase  = ""
 )
 
 func failOnError(err error, msg string) {
@@ -23,7 +30,10 @@ func failOnError(err error, msg string) {
 
 func main() {
 	log.Println("Life begins")
-	// Open database
+
+	// Create a pushover instance
+	pushovr, err := pushover.NewPushover(pushoverAppToken, userToken)
+	failOnError(err, "Pushover creation error")
 
 	// Connect to DB
 	db, err := sql.Open("postgres", "user=appread dbname='quantifiedSelf' sslmode=disable")
@@ -86,6 +96,17 @@ func main() {
 				log.Fatal("Error while querying db, ", err)
 			default:
 				log.Println("Got row for did ", did, ", ", timestamp, " - ", weight)
+				// Send via pushover with validate url
+				msg := pushover.Message{
+					Message:  fmt.Sprint("did: ", did, " - ", ((weight / 100.0) * 2.204), " lbs @", timestamp),
+					Title:    "New Weigh-in",
+					Url:      fmt.Sprint(responseURLBase, "/weighscale/validate/", did),
+					UrlTitle: "Validate",
+				}
+				req, receipt, err = pushovr.Push(msg)
+				if err != nil {
+					log.Prinln("Problem sending to pushover, ", err)
+				}
 			}
 		}
 	}()
