@@ -1,11 +1,16 @@
 package main
 
 import (
+	"bytes"
+	"database/sql"
+	"encoding/binary"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	"time"
 
+	_ "github.com/lib/pq"
 	"github.com/streadway/amqp"
 )
 
@@ -18,6 +23,12 @@ func failOnError(err error, msg string) {
 
 func main() {
 	log.Println("Life begins")
+	// Open database
+
+	// Connect to DB
+	db, err := sql.Open("postgres", "user=appread dbname='quantifiedSelf' sslmode=disable")
+	failOnError(err, "Error connecting to database")
+	defer db.Close()
 
 	// Open AMQP
 	conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
@@ -54,7 +65,28 @@ func main() {
 	go func() {
 		// Read until channel is closed
 		for m := range msgs {
+			// Declare some binary stuff
 			log.Println("Recieved: ", m.Body)
+			var did int64
+			buf := bytes.NewReader(m.Body)
+			err := binary.Read(buf, binary.LittleEndian, &did)
+			if err != nil {
+				log.Println("Problem decoding delivery, ", err)
+				panic(fmt.Sprint("Problem decoding delivery, ", err))
+			}
+			log.Println("Decoded as did ", did)
+			// Make the db query
+			var timestamp time.Time
+			var weight int64
+			err = db.QueryRow("SELECT date, weight FROM buffer.weight WHERE did=$1", did).Scan(&timestamp, &weight)
+			switch {
+			case err == sql.ErrNoRows:
+				log.Printf("No rows returned")
+			case err != nil:
+				log.Fatal("Error while querying db, ", err)
+			default:
+				log.Println("Got row for did ", did, ", ", timestamp, " - ", weight)
+			}
 		}
 	}()
 
